@@ -121,30 +121,54 @@ esp_err_t display_init(void)
     return ESP_OK;
 }
 
-esp_err_t display_show_tx(uint32_t transmitted, float voc, float pm2_5)
+esp_err_t display_show_tx(uint32_t device_id, uint32_t transmitted, float voc,
+                          float temperature, float pm2_5, float humidity)
 {
     if (!display_ready) {
         return ESP_ERR_INVALID_STATE;
     }
 
     char line[24];
+    char value[12];
     u8g2_ClearBuffer(&display);
-    
-    // Maximize space with a 9x15 Bold font
-    u8g2_SetFont(&display, u8g2_font_9x15B_tr); 
-    
-    snprintf(line, sizeof(line), "TX sent: %lu", (unsigned long)transmitted);
-    u8g2_DrawStr(&display, 0, 18, line); // Adjusted Y for taller font
-    
-    snprintf(line, sizeof(line), "VOC: %.0f", voc);
-    u8g2_DrawStr(&display, 0, 38, line); // Adjusted Y for middle line
-    
-    snprintf(line, sizeof(line), "PM2.5: %.0f", pm2_5);
-    u8g2_DrawStr(&display, 0, 58, line); // Adjusted Y for bottom line
+
+    u8g2_SetFont(&display, u8g2_font_6x13B_tr);
+    snprintf(line, sizeof(line), "TX ID: %lu Sent: %lu",
+             (unsigned long)device_id, (unsigned long)transmitted);
+    u8g2_DrawStr(&display, 0, 13, line);
+    u8g2_DrawLine(&display, 0, 15, 127, 15);
+
+    u8g2_SetFont(&display, u8g2_font_6x13_tr);
+    u8g2_DrawStr(&display, 0, 31, "VOC:");
+    snprintf(value, sizeof(value), "%.0f", (double)voc);
+    u8g2_DrawStr(&display, 30, 31, value);
+    u8g2_DrawStr(&display, 74, 31, "T:");
+    snprintf(value, sizeof(value), "%.1f", (double)temperature);
+    u8g2_DrawStr(&display, 90, 31, value);
+
+    u8g2_DrawStr(&display, 0, 47, "PM2.5:");
+    snprintf(value, sizeof(value), "%.0f", (double)pm2_5);
+    u8g2_DrawStr(&display, 42, 47, value);
+    u8g2_DrawStr(&display, 74, 47, "HR:");
+    snprintf(value, sizeof(value), "%.0f", (double)humidity);
+    u8g2_DrawStr(&display, 96, 47, value);
     
     display_send_buffer();
     return ESP_OK;
 
+}
 
+esp_err_t display_show_sensor_unavailable(void)
+{
+    if (!display_ready) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    u8g2_ClearBuffer(&display);
+    u8g2_SetFont(&display, u8g2_font_9x15B_tr);
+    u8g2_DrawStr(&display, 0, 24, "SEN54 offline");
+    u8g2_DrawStr(&display, 0, 50, "Retrying...");
+    display_send_buffer();
+    return ESP_OK;
 
 }

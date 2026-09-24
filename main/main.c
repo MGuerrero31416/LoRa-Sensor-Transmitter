@@ -4,15 +4,17 @@
 #include "driver/gpio.h"
 #include "driver/spi_master.h"
 #include "display.h"
+#include "sen54.h"
 #include "esp_check.h"
 #include "esp_err.h"
 #include "esp_log.h"
-#include "esp_random.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+const char FIRMWARE_REVISION[] = "1.1 2026_09_24";
 /* Heltec WiFi LoRa 32 V4 / SX1262 wiring. */
+#define DEVICE_ID 1
 #define LORA_NSS_GPIO 8
 #define LORA_SCK_GPIO 9
 #define LORA_MOSI_GPIO 10
@@ -31,9 +33,8 @@
 #define LORA_TX_POWER_DBM 22
 #define LORA_PACKET_LEN 26
 #define PACKET_VERSION 1
-#define DEVICE_ID 1
 #define STATUS_BOOT 0x01
-#define TRANSMIT_PERIOD_MS 2000
+#define TRANSMIT_PERIOD_MS 10000 // time between transmissions in milliseconds = 10 seconds
 #define TRANSMIT_TIMEOUT_MS 5000
 
 #define SX1262_CMD_SET_STANDBY 0x80
@@ -61,6 +62,7 @@
 static const char *TAG = "lora_tx";
 static spi_device_handle_t lora_spi;
 
+/* Wait until the SX1262 is no longer busy, returning a timeout error if it stalls. */
 static esp_err_t lora_wait_ready(TickType_t timeout)
 {
     TickType_t start = xTaskGetTickCount();
@@ -73,6 +75,7 @@ static esp_err_t lora_wait_ready(TickType_t timeout)
     return ESP_OK;
 }
 
+/* Exchange raw SPI bytes with the LoRa radio using the configured SPI device. */
 static esp_err_t lora_transfer(const uint8_t *tx_data, uint8_t *rx_data, size_t length)
 {
     spi_transaction_t transaction = {
@@ -83,6 +86,7 @@ static esp_err_t lora_transfer(const uint8_t *tx_data, uint8_t *rx_data, size_t 
     return spi_device_transmit(lora_spi, &transaction);
 }
 
+/* Send a command byte plus optional arguments to the SX1262. */
 static esp_err_t lora_command(uint8_t command, const uint8_t *arguments, size_t argument_length)
 {
     uint8_t buffer[64] = {0};
@@ -95,6 +99,7 @@ static esp_err_t lora_command(uint8_t command, const uint8_t *arguments, size_t 
     return lora_transfer(buffer, NULL, argument_length + 1);
 }
 
+/* Read a small response payload from a SX1262 register or status command. */
 static esp_err_t lora_read_command(uint8_t command, uint8_t *response, size_t response_length)
 {
     uint8_t buffer[64] = {0};
@@ -106,6 +111,7 @@ static esp_err_t lora_read_command(uint8_t command, uint8_t *response, size_t re
     return ESP_OK;
 }
 
+/* Put the front-end power amplifier into receive mode. */
 static void lora_fem_set_rx(void)
 {
     gpio_set_level(LORA_PA_POWER_GPIO, 1);
@@ -113,6 +119,7 @@ static void lora_fem_set_rx(void)
     gpio_set_level(LORA_PA_TX_EN_GPIO, 0);
 }
 
+/* Enable the RF power amplifier and switch the front end into transmit mode. */
 static void lora_fem_set_tx(void)
 {
     gpio_set_level(LORA_PA_POWER_GPIO, 1);
@@ -122,6 +129,7 @@ static void lora_fem_set_tx(void)
     vTaskDelay(pdMS_TO_TICKS(2));
 }
 
+/* Initialize the GPIO, SPI bus, and SX1262 modem configuration for LoRa operation. */
 static esp_err_t lora_init(void)
 {
     gpio_config_t outputs = {
@@ -199,6 +207,7 @@ static esp_err_t lora_init(void)
     return ESP_OK;
 }
 
+/* Write a 32-bit integer into a byte array using little-endian byte order. */
 static void put_u32_le(uint8_t *buffer, uint32_t value)
 {
     buffer[0] = (uint8_t)value;
@@ -207,6 +216,7 @@ static void put_u32_le(uint8_t *buffer, uint32_t value)
     buffer[3] = (uint8_t)(value >> 24);
 }
 
+/* Serialize a float into its bit pattern and store it as little-endian bytes. */
 static void put_float_le(uint8_t *buffer, float value)
 {
     uint32_t representation = 0;
@@ -214,6 +224,7 @@ static void put_float_le(uint8_t *buffer, float value)
     put_u32_le(buffer, representation);
 }
 
+/* Assemble a LoRa packet, transmit it, wait for TX completion, and return the final status. */
 static esp_err_t lora_send(const uint8_t *payload, size_t length)
 {
     ESP_RETURN_ON_FALSE(length == LORA_PACKET_LEN, ESP_ERR_INVALID_SIZE, TAG, "packet must be 26 bytes");
@@ -259,11 +270,19 @@ static esp_err_t lora_send(const uint8_t *payload, size_t length)
     return (flags & SX1262_IRQ_TX_DONE) != 0 ? ESP_OK : ESP_ERR_TIMEOUT;
 }
 
+/* Main sensor loop: initialize peripherals, build a telemetry packet, and periodically transmit it. */
 void app_main(void)
 {
     esp_err_t display_error = display_init();
     if (display_error != ESP_OK) {
         ESP_LOGE(TAG, "OLED unavailable: %s; continuing without display", esp_err_to_name(display_error));
+    }
+    esp_err_t sensor_error = sen54_init();
+    if (sensor_error != ESP_OK) {
+        ESP_LOGE(TAG, "SEN54 unavailable: %s; will retry", esp_err_to_name(sensor_error));
+        if (display_error == ESP_OK) {
+            display_error = display_show_sensor_unavailable();
+        }
     }
     ESP_ERROR_CHECK(lora_init());
     ESP_LOGI(TAG, "ready; transmitting every %d ms", TRANSMIT_PERIOD_MS);
@@ -272,10 +291,35 @@ void app_main(void)
     uint32_t transmitted = 0;
     bool first_packet = true;
     while (true) {
-        const float temperature = 22.0f + (float)(esp_random() % 601) / 100.0f;
-        const float humidity = 40.0f + (float)(esp_random() % 3001) / 100.0f;
-        const float pm2_5 = 2.0f + (float)(esp_random() % 2801) / 100.0f;
-        const float voc = 50.0f + (float)(esp_random() % 15001) / 100.0f;
+        sen54_measurement_t measurement = {0};
+        if (sensor_error != ESP_OK) {
+            sensor_error = sen54_init();
+            if (sensor_error != ESP_OK) {
+                ESP_LOGE(TAG, "SEN54 initialization retry failed: %s", esp_err_to_name(sensor_error));
+                if (display_error == ESP_OK) {
+                    display_error = display_show_sensor_unavailable();
+                }
+                vTaskDelay(pdMS_TO_TICKS(TRANSMIT_PERIOD_MS));
+                continue;
+            }
+        }
+
+        esp_err_t error = sen54_read_measurement(&measurement);
+        if (error != ESP_OK) {
+            ESP_LOGE(TAG, "SENSOR ERROR: %s", esp_err_to_name(error));
+            if (error != ESP_ERR_NOT_FINISHED) {
+                sensor_error = error;
+            }
+            if (display_error == ESP_OK) {
+                display_error = display_show_sensor_unavailable();
+            }
+            vTaskDelay(pdMS_TO_TICKS(TRANSMIT_PERIOD_MS));
+            continue;
+        }
+        const float temperature = measurement.temperature;
+        const float humidity = measurement.humidity;
+        const float pm2_5 = measurement.pm2_5;
+        const float voc = measurement.voc;
         uint8_t payload[LORA_PACKET_LEN] = {0};
 
         payload[0] = PACKET_VERSION;
@@ -287,7 +331,7 @@ void app_main(void)
         put_float_le(&payload[21], voc);
         payload[25] = first_packet ? STATUS_BOOT : 0;
 
-        esp_err_t error = lora_send(payload, sizeof(payload));
+        error = lora_send(payload, sizeof(payload));
         if (error == ESP_OK) {
             ESP_LOGI(TAG, "TX: seq=%" PRIu32 " device=%" PRIu32 " temp=%.2f rh=%.2f pm2.5=%.2f voc=%.2f status=%u%s len=%u",
                      sequence, (uint32_t)DEVICE_ID, temperature, humidity, pm2_5, voc, payload[25],
@@ -299,7 +343,8 @@ void app_main(void)
             sequence++;
             transmitted++;
             if (display_error == ESP_OK) {
-                esp_err_t update_error = display_show_tx(transmitted, voc, pm2_5);
+                esp_err_t update_error = display_show_tx(DEVICE_ID, transmitted, voc,
+                                                         temperature, pm2_5, humidity);
                 if (update_error != ESP_OK) {
                     ESP_LOGE(TAG, "OLED update failed: %s", esp_err_to_name(update_error));
                     display_error = update_error;

@@ -1,24 +1,25 @@
-# ESP32 LoRa Room Sensor Transmitter — SEN54
+# ESP32 LoRa Room Sensor Transmitter — SEN54 / SEN56
 
-Wireless room sensor transmitter based on the **Heltec WiFi LoRa 32 V4 (SX1262)** and **Sensirion SEN54**.
+Wireless room sensor transmitter based on the **Heltec WiFi LoRa 32 V4 (SX1262)** and a **Sensirion SEN54/SEN56-class environmental sensor**.
 
-The device reads the SEN54 environmental sensor and transmits the sensor data via LoRa to a dedicated ESP32 LoRa Gateway.
+This project is the transmitter side of the **LoRa BACnet Gateway** located here:
 
-The gateway receives the LoRa packets and exposes the sensor values through **BACnet MS/TP** for integration with building automation systems such as Johnson Controls Metasys.
+https://github.com/MGuerrero31416/LoRa-BACnet-Gateway
+
+The transmitter reads the air quality and environmental data from the sensor and sends it over LoRa to the gateway, which exposes the values through **BACnet MS/TP** for building automation integration such as Johnson Controls Metasys.
 
 ## System Architecture
 
-SEN54
+SEN54 / SEN56
   │
   ▼
 ESP32-S3 + SX1262
   │
   │ LoRa
   ▼
-ESP32-S3 + SX1262
-LoRa / BACnet MS/TP Gateway
+LoRa BACnet Gateway
   │
-  │ RS-485
+  │ RS-485 / BACnet MS/TP
   ▼
 BACnet MS/TP
   │
@@ -27,12 +28,25 @@ Metasys
 
 ## Related Project
 
-The corresponding LoRa receiver and BACnet MS/TP Gateway is:
+The corresponding receiving gateway project is:
 
-**ESP32-BACnet-Master**
-https://github.com/MGuerrero31416/ESP32-BACnet-Master
+**LoRa BACnet Gateway**
+https://github.com/MGuerrero31416/LoRa-BACnet-Gateway
 
-The `lora` branch contains the `HW_PROFILE_LORA_GATEWAY` implementation for receiving these sensor packets and exposing the values through BACnet MS/TP.
+This transmitter sends the wireless sensor payload to that gateway, which decodes the packet and exposes the values over BACnet MS/TP.
+
+## Sensor GPIO / I2C Wiring
+
+The current code configures the Sensirion sensor on the ESP32's I2C port 1:
+
+- Sensor family: Sensirion SEN54 (SEN56-compatible interface)
+- I2C bus: `I2C_NUM_1`
+- SDA GPIO: `GPIO4`
+- SCL GPIO: `GPIO6`
+- I2C address: `0x69`
+- Clock speed: `100000 Hz`
+
+This is the exact hardware mapping implemented in the device firmware.
 
 ## LoRa Packet
 
@@ -54,11 +68,11 @@ The protocol includes packet validation, sequence tracking, and transmitter rebo
 - Heltec WiFi LoRa 32 V4
 - ESP32-S3
 - SX1262 LoRa transceiver
-- Sensirion SEN54
-- SSD1315 128×64 OLED
+- Sensirion SEN54 / SEN56-class sensor
+- SSD1306 128×64 OLED
 
 ## Current Development Status
 
 The LoRa transmitter and BACnet gateway have been tested as a complete wireless link.
 
-Initial development includes dummy sensor data for testing before connecting the SEN54. The production configuration reads the SEN54 and transmits the measured values to the LoRa/BACnet gateway.
+Initial development included dummy sensor data for validation before connecting the environmental sensor. The production configuration reads the SEN54/SEN56-family sensor and transmits the measured values to the LoRa/BACnet gateway.
