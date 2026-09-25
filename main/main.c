@@ -10,7 +10,7 @@
 #include "sen54.h"
 #include "telemetry_packet.h"
 
-const char FIRMWARE_REVISION[] = "1.2";
+const char FIRMWARE_REVISION[] = "1.3";
 const char FIRMWARE_DATE[] = "2026_09_25";
 #define DEVICE_ID 1
 #define TRANSMIT_PERIOD_MS 10000

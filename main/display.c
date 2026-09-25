@@ -12,6 +12,8 @@
 #include <stdio.h>
 
 #define TAG "display"
+#define OLED_ADDRESS 0x3C
+#define OLED_I2C_FREQUENCY_HZ 400000
 #define OLED_SDA_GPIO 17
 #define OLED_SCL_GPIO 18
 #define OLED_RESET_GPIO 21
@@ -147,9 +149,15 @@ esp_err_t display_show_tx(uint32_t device_id, uint32_t transmitted, float voc,
     u8g2_ClearBuffer(&display);
 
     u8g2_SetFont(&display, u8g2_font_6x13B_tr);
-    snprintf(line, sizeof(line), "TX ID: %lu Sent: %lu",
-             (unsigned long)device_id, (unsigned long)transmitted);
+    snprintf(line, sizeof(line), "TX ID: %lu",
+             (unsigned long)device_id);
     u8g2_DrawStr(&display, 0, 13, line);
+    const uint8_t sent_x = u8g2_GetStrWidth(&display, line) + 4;
+
+    u8g2_SetFont(&display, u8g2_font_6x13_tr);
+    snprintf(line, sizeof(line), "Sent: %lu",
+             (unsigned long)transmitted);
+    u8g2_DrawStr(&display, sent_x, 13, line);
     u8g2_DrawLine(&display, 0, 15, 127, 15);
 
     u8g2_SetFont(&display, u8g2_font_6x13_tr);
