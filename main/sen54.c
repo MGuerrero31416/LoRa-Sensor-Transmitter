@@ -61,14 +61,29 @@ static esp_err_t sen54_read_words(uint16_t command, uint8_t *words, size_t word_
         vTaskDelay(pdMS_TO_TICKS(20));
         esp_err_t response_error = i2c_master_receive(sen54_device, response, word_count * 3, pdMS_TO_TICKS(100));
         if (response_error == ESP_OK) {
+            bool crc_valid = true;
             for (size_t index = 0; index < word_count; index++) {
                 const uint8_t *word = &response[index * 3];
-                ESP_RETURN_ON_FALSE(sen54_crc8(word, 2) == word[2], ESP_FAIL, TAG,
-                                    "CRC failed for command 0x%04x", command);
-                words[index * 2] = word[0];
-                words[index * 2 + 1] = word[1];
+                if (sen54_crc8(word, 2) != word[2]) {
+                    ESP_LOGW(TAG, "CRC failed for command 0x%04x, retrying", command);
+                    crc_valid = false;
+                    break;
+                }
             }
-            return ESP_OK;
+            if (crc_valid) {
+                for (size_t index = 0; index < word_count; index++) {
+                    const uint8_t *word = &response[index * 3];
+                    words[index * 2] = word[0];
+                    words[index * 2 + 1] = word[1];
+                }
+                return ESP_OK;
+            }
+            if (attempt == 2) {
+                ESP_LOGE(TAG, "response 0x%04x failed CRC after retries", command);
+                return ESP_FAIL;
+            }
+            vTaskDelay(pdMS_TO_TICKS(100));
+            continue;
         }
         if (attempt < 2) {
             ESP_LOGW(TAG, "response 0x%04x not ready (%s), retrying", command,

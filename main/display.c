@@ -23,6 +23,7 @@ static i2c_master_bus_handle_t display_bus;
 static i2c_master_dev_handle_t display_device;
 static u8g2_t display;
 static bool display_ready;
+static esp_err_t display_transfer_error;
 
 static uint8_t u8g2_i2c_callback(u8x8_t *u8x8, uint8_t message, uint8_t argument, void *data)
 {
@@ -32,6 +33,9 @@ static uint8_t u8g2_i2c_callback(u8x8_t *u8x8, uint8_t message, uint8_t argument
 
     switch (message) {
     case U8X8_MSG_BYTE_INIT: {
+        if (display_device != NULL) {
+            return 1;
+        }
         const i2c_device_config_t device_config = {
             .dev_addr_length = I2C_ADDR_BIT_LEN_7,
             .device_address = OLED_ADDRESS,
@@ -41,6 +45,7 @@ static uint8_t u8g2_i2c_callback(u8x8_t *u8x8, uint8_t message, uint8_t argument
     }
     case U8X8_MSG_BYTE_START_TRANSFER:
         buffer_length = 0;
+        display_transfer_error = ESP_OK;
         break;
     case U8X8_MSG_BYTE_SEND:
         if (buffer_length + argument > sizeof(buffer)) {
@@ -51,7 +56,8 @@ static uint8_t u8g2_i2c_callback(u8x8_t *u8x8, uint8_t message, uint8_t argument
         }
         break;
     case U8X8_MSG_BYTE_END_TRANSFER:
-        return i2c_master_transmit(display_device, buffer, buffer_length, -1) == ESP_OK;
+        display_transfer_error = i2c_master_transmit(display_device, buffer, buffer_length, -1);
+        return display_transfer_error == ESP_OK;
     default:
         break;
     }
@@ -87,13 +93,15 @@ static uint8_t u8g2_gpio_delay_callback(u8x8_t *u8x8, uint8_t message, uint8_t a
     return 1;
 }
 
-static void display_send_buffer(void)
+static esp_err_t display_send_buffer(void)
 {
     u8g2_SendBuffer(&display);
+    return display_transfer_error;
 }
 
 esp_err_t display_init(void)
 {
+    display_ready = false;
     const gpio_config_t output = {
         .pin_bit_mask = (1ULL << OLED_VEXT_GPIO) | (1ULL << OLED_RESET_GPIO),
         .mode = GPIO_MODE_OUTPUT,
@@ -113,13 +121,15 @@ esp_err_t display_init(void)
     vTaskDelay(pdMS_TO_TICKS(10));
     gpio_set_level(OLED_VEXT_GPIO, 0);
     vTaskDelay(pdMS_TO_TICKS(10));
-    ESP_RETURN_ON_ERROR(i2c_new_master_bus(&bus_config, &display_bus), TAG, "I2C bus setup failed");
+    if (display_bus == NULL) {
+        ESP_RETURN_ON_ERROR(i2c_new_master_bus(&bus_config, &display_bus), TAG, "I2C bus setup failed");
+    }
 
     u8g2_Setup_ssd1306_i2c_128x64_noname_f(&display, U8G2_R0, u8g2_i2c_callback, u8g2_gpio_delay_callback);
     u8g2_SetI2CAddress(&display, OLED_ADDRESS * 2);
     u8g2_InitDisplay(&display);
     u8g2_ClearBuffer(&display);
-    u8g2_SendBuffer(&display);
+    ESP_RETURN_ON_ERROR(display_send_buffer(), TAG, "OLED initialization transfer failed");
     u8g2_SetContrast(&display, 140);
     u8g2_SetPowerSave(&display, 0);
     display_ready = true;
@@ -158,8 +168,7 @@ esp_err_t display_show_tx(uint32_t device_id, uint32_t transmitted, float voc,
     snprintf(value, sizeof(value), "%.0f", (double)humidity);
     u8g2_DrawStr(&display, 96, 47, value);
     
-    display_send_buffer();
-    return ESP_OK;
+    return display_send_buffer();
 
 }
 
@@ -173,7 +182,6 @@ esp_err_t display_show_sensor_unavailable(void)
     u8g2_SetFont(&display, u8g2_font_9x15B_tr);
     u8g2_DrawStr(&display, 0, 24, "SEN54 offline");
     u8g2_DrawStr(&display, 0, 50, "Retrying...");
-    display_send_buffer();
-    return ESP_OK;
+    return display_send_buffer();
 
 }
