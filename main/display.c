@@ -108,15 +108,20 @@ esp_err_t display_init(void)
     };
 
     ESP_RETURN_ON_ERROR(gpio_config(&output), TAG, "OLED GPIO setup failed");
+    gpio_set_level(OLED_VEXT_GPIO, 1);
+    gpio_set_level(OLED_RESET_GPIO, 0);
+    vTaskDelay(pdMS_TO_TICKS(10));
     gpio_set_level(OLED_VEXT_GPIO, 0);
-    gpio_set_level(OLED_RESET_GPIO, 1);
+    vTaskDelay(pdMS_TO_TICKS(10));
     ESP_RETURN_ON_ERROR(i2c_new_master_bus(&bus_config, &display_bus), TAG, "I2C bus setup failed");
 
     u8g2_Setup_ssd1306_i2c_128x64_noname_f(&display, U8G2_R0, u8g2_i2c_callback, u8g2_gpio_delay_callback);
     u8g2_SetI2CAddress(&display, OLED_ADDRESS * 2);
     u8g2_InitDisplay(&display);
-    u8g2_SetPowerSave(&display, 0);
+    u8g2_ClearBuffer(&display);
+    u8g2_SendBuffer(&display);
     u8g2_SetContrast(&display, 140);
+    u8g2_SetPowerSave(&display, 0);
     display_ready = true;
     return ESP_OK;
 }

@@ -12,7 +12,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
-const char FIRMWARE_REVISION[] = "1.1 2026_09_24";
+const char FIRMWARE_REVISION[] = "1.2";
+const char FIRMWARE_DATE[] = "2026_09_25";
 /* Heltec WiFi LoRa 32 V4 / SX1262 wiring. */
 #define DEVICE_ID 1
 #define LORA_NSS_GPIO 8
