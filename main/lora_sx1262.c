@@ -20,12 +20,6 @@
 #define LORA_PA_POWER_GPIO 7
 #define LORA_PA_EN_GPIO 2
 #define LORA_PA_TX_EN_GPIO 46
-#define LORA_FREQUENCY_HZ 923000000UL
-#define LORA_BANDWIDTH 0x04
-#define LORA_SPREADING_FACTOR 10
-#define LORA_CODING_RATE 0x01
-#define LORA_PREAMBLE_LENGTH 12
-#define LORA_TX_POWER_DBM 22
 #define TRANSMIT_TIMEOUT_MS 5000
 
 #define SX1262_CMD_SET_STANDBY 0x80
@@ -216,6 +210,7 @@ esp_err_t lora_init(void)
 
 esp_err_t lora_send(const uint8_t *payload, size_t length)
 {
+    ESP_RETURN_ON_FALSE(payload != NULL, ESP_ERR_INVALID_ARG, TAG, "payload is NULL");
     ESP_RETURN_ON_FALSE(length == LORA_PACKET_LEN, ESP_ERR_INVALID_SIZE, TAG, "packet must be 26 bytes");
     const uint8_t buffer[] = {0x00, 0x00};
     const uint8_t packet[] = {0x00, LORA_PREAMBLE_LENGTH, 0x00, (uint8_t)length, 0x01, 0x00};
@@ -245,6 +240,8 @@ esp_err_t lora_send(const uint8_t *payload, size_t length)
         ESP_LOGE(TAG, "IRQ clear failed: %s", esp_err_to_name(ret));
         goto tx_cleanup;
     }
+    lora_tx_waiter = xTaskGetCurrentTaskHandle();
+    ulTaskNotifyTake(pdTRUE, 0);
     if ((ret = lora_command(SX1262_CMD_SET_TX, tx_timeout, sizeof(tx_timeout))) != ESP_OK) {
         ESP_LOGE(TAG, "transmit start failed: %s", esp_err_to_name(ret));
         goto tx_cleanup;
@@ -252,8 +249,6 @@ esp_err_t lora_send(const uint8_t *payload, size_t length)
 
     uint8_t irq_status[2] = {0};
     result = ESP_ERR_TIMEOUT;
-    lora_tx_waiter = xTaskGetCurrentTaskHandle();
-    ulTaskNotifyTake(pdTRUE, 0);
     if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(TRANSMIT_TIMEOUT_MS)) != 0) {
         result = lora_read_command(SX1262_CMD_GET_IRQ_STATUS, irq_status, sizeof(irq_status));
     }

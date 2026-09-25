@@ -2,6 +2,9 @@
 
 #include "esp_err.h"
 
+#define SEN54_ADDRESS 0x69
+#define SEN54_I2C_FREQUENCY_HZ 100000
+
 typedef struct {
     float temperature;
     float humidity;

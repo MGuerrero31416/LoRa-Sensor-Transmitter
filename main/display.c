@@ -12,8 +12,6 @@
 #include <stdio.h>
 
 #define TAG "display"
-#define OLED_ADDRESS 0x3C
-#define OLED_I2C_FREQUENCY_HZ 400000
 #define OLED_SDA_GPIO 17
 #define OLED_SCL_GPIO 18
 #define OLED_RESET_GPIO 21
@@ -95,6 +93,7 @@ static uint8_t u8g2_gpio_delay_callback(u8x8_t *u8x8, uint8_t message, uint8_t a
 
 static esp_err_t display_send_buffer(void)
 {
+    display_transfer_error = ESP_OK;
     u8g2_SendBuffer(&display);
     return display_transfer_error;
 }

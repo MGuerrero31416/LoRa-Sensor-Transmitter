@@ -1,3 +1,4 @@
+#include <stdbool.h>
 #include <inttypes.h>
 
 #include "display.h"
@@ -40,6 +41,25 @@ void app_main(void)
         display_error = display_show_sensor_unavailable_with_recovery(display_error);
     }
     ESP_ERROR_CHECK(lora_init());
+    ESP_LOGI(TAG, "========================================");
+    ESP_LOGI(TAG, "Application configuration");
+    ESP_LOGI(TAG, "Firmware revision: %s", FIRMWARE_REVISION);
+    ESP_LOGI(TAG, "Firmware date: %s", FIRMWARE_DATE);
+    ESP_LOGI(TAG, "Device ID: %u", (unsigned)DEVICE_ID);
+    ESP_LOGI(TAG, "Transmit period: %u ms", (unsigned)TRANSMIT_PERIOD_MS);
+    ESP_LOGI(TAG, "LoRa frequency: %lu Hz", (unsigned long)LORA_FREQUENCY_HZ);
+    ESP_LOGI(TAG, "LoRa bandwidth: 0x%02X", (unsigned)LORA_BANDWIDTH);
+    ESP_LOGI(TAG, "LoRa spreading factor: %u", (unsigned)LORA_SPREADING_FACTOR);
+    ESP_LOGI(TAG, "LoRa coding rate: 0x%02X", (unsigned)LORA_CODING_RATE);
+    ESP_LOGI(TAG, "LoRa preamble length: %u", (unsigned)LORA_PREAMBLE_LENGTH);
+    ESP_LOGI(TAG, "LoRa TX power: %d dBm", LORA_TX_POWER_DBM);
+    ESP_LOGI(TAG, "Packet version: %u", (unsigned)TELEMETRY_PACKET_VERSION);
+    ESP_LOGI(TAG, "Packet length: %u bytes", (unsigned)TELEMETRY_PACKET_LEN);
+    ESP_LOGI(TAG, "SEN54 I2C address: 0x%02X", (unsigned)SEN54_ADDRESS);
+    ESP_LOGI(TAG, "SEN54 I2C frequency: %u Hz", (unsigned)SEN54_I2C_FREQUENCY_HZ);
+    ESP_LOGI(TAG, "OLED I2C address: 0x%02X", (unsigned)OLED_ADDRESS);
+    ESP_LOGI(TAG, "OLED I2C frequency: %u Hz", (unsigned)OLED_I2C_FREQUENCY_HZ);
+    ESP_LOGI(TAG, "========================================");
     ESP_LOGI(TAG, "ready; transmitting every %d ms", TRANSMIT_PERIOD_MS);
 
     uint32_t sequence = 0;

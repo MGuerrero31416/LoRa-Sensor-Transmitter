@@ -71,6 +71,17 @@ The protocol includes packet validation, sequence tracking, and transmitter rebo
 - Sensirion SEN54 / SEN56-class sensor
 - SSD1306 128×64 OLED
 
+## User Settings
+
+Modify these settings before building and flashing the transmitter:
+
+- Firmware revision and date: `FIRMWARE_REVISION` and `FIRMWARE_DATE` in [main/main.c](main/main.c).
+- Device identifier: `DEVICE_ID` in [main/main.c](main/main.c). This must match the device identity expected by the gateway.
+- Transmission interval: `TRANSMIT_PERIOD_MS` in [main/main.c](main/main.c), in milliseconds.
+- LoRa frequency and transmit power: `LORA_FREQUENCY_HZ` and `LORA_TX_POWER_DBM` in [main/lora_sx1262.h](main/lora_sx1262.h). The gateway and regional radio configuration must use a compatible frequency.
+
+Hardware pin mappings and additional LoRa parameters are defined in [main/lora_sx1262.c](main/lora_sx1262.c), [main/sen54.c](main/sen54.c), and [main/display.c](main/display.c).
+
 ## Current Development Status
 
 The LoRa transmitter and BACnet gateway have been tested as a complete wireless link.

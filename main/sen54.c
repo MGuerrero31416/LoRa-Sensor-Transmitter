@@ -10,8 +10,6 @@
 #include "freertos/task.h"
 
 #define TAG "sen54"
-#define SEN54_ADDRESS 0x69
-#define SEN54_I2C_FREQUENCY_HZ 100000
 #define SEN54_SDA_GPIO 4
 #define SEN54_SCL_GPIO 6
 #define SEN54_CMD_START_MEASUREMENT 0x0021
