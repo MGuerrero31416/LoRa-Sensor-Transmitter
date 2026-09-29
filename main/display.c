@@ -126,9 +126,13 @@ esp_err_t display_init(void)
         ESP_RETURN_ON_ERROR(i2c_new_master_bus(&bus_config, &display_bus), TAG, "I2C bus setup failed");
     }
 
-    u8g2_Setup_ssd1306_i2c_128x64_noname_f(&display, U8G2_R0, u8g2_i2c_callback, u8g2_gpio_delay_callback);
+    u8g2_Setup_ssd1306_i2c_128x64_noname_f(&display, U8G2_R2, u8g2_i2c_callback, u8g2_gpio_delay_callback);
     u8g2_SetI2CAddress(&display, OLED_ADDRESS * 2);
     u8g2_InitDisplay(&display);
+    const uint8_t scan_clock_command[] = {0x00, 0xD5, 0xF0};
+    ESP_RETURN_ON_ERROR(i2c_master_transmit(display_device, scan_clock_command,
+                                            sizeof(scan_clock_command), -1),
+                        TAG, "OLED scan clock setup failed");
     u8g2_ClearBuffer(&display);
     ESP_RETURN_ON_ERROR(display_send_buffer(), TAG, "OLED initialization transfer failed");
     u8g2_SetContrast(&display, 140);

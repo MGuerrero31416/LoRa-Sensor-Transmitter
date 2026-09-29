@@ -10,10 +10,9 @@ The transmitter reads the air quality and environmental data from the sensor and
 
 ## Hardware Photos
 
-<p align="center">
-  <img src="docs/images/TX.jpg" alt="LoRa sensor transmitter board" width="45%" />
-  <img src="docs/images/TX-RX.jpg" alt="LoRa transmitter and receiver setup" width="45%" />
-</p>
+<img src="docs/images/TX.jpg" alt="LoRa sensor transmitter board" width="100%" />
+
+<img src="docs/images/TX-RX.jpg" alt="LoRa transmitter and receiver setup" width="100%" />
 
 ## System Architecture
 
