@@ -19,7 +19,7 @@ static void put_float_le(uint8_t *buffer, float value)
 
 esp_err_t telemetry_packet_encode(uint8_t *packet, size_t packet_length, uint32_t device_id,
                                   uint32_t sequence, bool first_packet,
-                                  const sen54_measurement_t *measurement)
+                                  const modbus_measurement_t *measurement)
 {
     if (packet == NULL || measurement == NULL) {
         return ESP_ERR_INVALID_ARG;
@@ -32,10 +32,10 @@ esp_err_t telemetry_packet_encode(uint8_t *packet, size_t packet_length, uint32_
     packet[0] = TELEMETRY_PACKET_VERSION;
     put_u32_le(&packet[1], device_id);
     put_u32_le(&packet[5], sequence);
-    put_float_le(&packet[9], measurement->temperature);
-    put_float_le(&packet[13], measurement->humidity);
-    put_float_le(&packet[17], measurement->pm2_5);
-    put_float_le(&packet[21], measurement->voc);
+    put_float_le(&packet[9], -1.0f);
+    put_float_le(&packet[13], -1.0f);
+    put_float_le(&packet[17], -1.0f);
+    put_float_le(&packet[21], measurement->value);
     packet[25] = first_packet ? TELEMETRY_STATUS_BOOT : 0;
     return ESP_OK;
 }

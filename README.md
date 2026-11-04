@@ -1,12 +1,12 @@
-# ESP32 LoRa Room Sensor Transmitter — SEN54 / SEN56
+# ESP32 LoRa Analog Sensor Transmitter
 
-Wireless room sensor transmitter based on the **Heltec WiFi LoRa 32 V4 (SX1262)** and a **Sensirion SEN54 environmental sensor**. The firmware uses the SEN54 command set; SEN56 compatibility is hardware-dependent and has not been independently verified here.
+Wireless analog sensor transmitter based on the **Heltec WiFi LoRa 32 V4 (SX1262)**. It reads one analog measurement from a Modbus RTU device over an external RS-485 transceiver and sends it to the LoRa gateway.
 
 This project is the transmitter side of the **LoRa BACnet Gateway** located here:
 
 https://github.com/MGuerrero31416/LoRa-BACnet-Gateway
 
-The transmitter reads the air quality and environmental data from the sensor and sends it over LoRa to the gateway, which exposes the values through **BACnet MS/TP** for building automation integration such as Johnson Controls Metasys.
+The transmitter reads one analog measurement from a Modbus device and sends it over LoRa to the gateway, which exposes the value through **BACnet MS/TP** for building automation integration such as Johnson Controls Metasys.
 
 ## Hardware Photos
 
@@ -17,8 +17,9 @@ The transmitter reads the air quality and environmental data from the sensor and
 ## System Architecture
 
 ```text
-SEN54
+Modbus analog sensor
   |
+  | Modbus RTU / RS-485
   v
 ESP32-S3 + SX1262
   |
@@ -43,18 +44,18 @@ https://github.com/MGuerrero31416/LoRa-BACnet-Gateway
 
 This transmitter sends the wireless sensor payload to that gateway, which decodes the packet and exposes the values over BACnet MS/TP.
 
-## Sensor GPIO / I2C Wiring
+## Modbus RTU / RS-485 Wiring
 
-The current code configures a Sensirion SEN54 on the ESP32's I2C port 1:
+The Modbus master uses UART1 and an external RS-485 transceiver:
 
-- Sensor: Sensirion SEN54
-- I2C bus: `I2C_NUM_1`
-- SDA GPIO: `GPIO4`
-- SCL GPIO: `GPIO6`
-- I2C address: `0x69`
-- Clock speed: `100000 Hz`
+- ESP32 TX: `GPIO4` to transceiver DI
+- ESP32 RX: `GPIO6` from transceiver RO
+- UART RTS: `GPIO5` connected to both transceiver DE and active-low `/RE`
+- Transceiver A/B: to the Modbus device's RS-485 pair; connect grounds
 
-This is the exact hardware mapping implemented in the device firmware.
+GPIO4, GPIO5, and GPIO6 are exposed on Heltec V4.2.0 header J3 pins 15, 16, and 17 respectively. GPIO5 is not used by the firmware's LoRa or OLED mappings and is configured as the hardware UART RTS direction signal. The ESP-Modbus RTU master sets UART1 to hardware half-duplex mode; no GPIO direction-control task is used.
+
+Modbus settings are grouped at the top of [main/modbus_sensor.c](main/modbus_sensor.c): unit ID `1`, input register function `0x04`, zero-based register address `0`, 9600 baud, 8N1, and scale `1.0` with offset `0.0`. Change these to match the connected device. The default measurement is an unsigned 16-bit register value converted as `raw * scale + offset`.
 
 ## OLED GPIO / I2C Wiring
 
@@ -102,7 +103,7 @@ The protocol includes packet validation, sequence tracking, and transmitter rebo
 - Heltec WiFi LoRa 32 V4
 - ESP32-S3
 - SX1262 LoRa transceiver
-- Sensirion SEN54 / SEN56-class sensor
+- Modbus RTU analog sensor and RS-485 transceiver
 - SSD1306 128×64 OLED
 
 ## User Settings
@@ -115,13 +116,12 @@ Modify these settings before building and flashing the transmitter:
 - LoRa frequency and transmit power: `LORA_FREQUENCY_HZ` and `LORA_TX_POWER_DBM` in [main/lora_sx1262.h](main/lora_sx1262.h). The gateway and regional radio configuration must use a compatible frequency.
 - LoRa modulation: `LORA_BANDWIDTH`, `LORA_SPREADING_FACTOR`, `LORA_CODING_RATE`, and `LORA_PREAMBLE_LENGTH` in [main/lora_sx1262.h](main/lora_sx1262.h). These settings must match the gateway.
 - Packet format: `TELEMETRY_PACKET_VERSION` and `TELEMETRY_PACKET_LEN` in [main/telemetry_packet.h](main/telemetry_packet.h). Changes require corresponding gateway updates.
-- SEN54 I2C address and speed: `SEN54_ADDRESS` and `SEN54_I2C_FREQUENCY_HZ` in [main/sen54.h](main/sen54.h).
 - OLED I2C address and speed: `OLED_ADDRESS` and `OLED_I2C_FREQUENCY_HZ` in [main/display.h](main/display.h).
 
-Hardware pin mappings are defined in [main/lora_sx1262.c](main/lora_sx1262.c), [main/sen54.c](main/sen54.c), and [main/display.c](main/display.c).
+Hardware pin mappings are defined in [main/lora_sx1262.c](main/lora_sx1262.c), [main/modbus_sensor.c](main/modbus_sensor.c), and [main/display.c](main/display.c).
 
 ## Current Development Status
 
 The LoRa transmitter and BACnet gateway have been tested as a complete wireless link.
 
-Initial development included dummy sensor data for validation before connecting the environmental sensor. The production configuration reads the SEN54 sensor and transmits the measured values to the LoRa/BACnet gateway.
+The transmitter reads one Modbus RTU analog register and temporarily places its value in the packet's existing VOC float field. The telemetry packet remains 26 bytes with its current version and offsets; temperature, humidity, and PM2.5 are encoded as `-1.0` (unavailable).

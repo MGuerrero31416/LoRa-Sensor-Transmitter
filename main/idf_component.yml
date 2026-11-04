@@ -1,4 +1,5 @@
 dependencies:
+  espressif/esp-modbus: "2.1.4"
   u8g2:
     git: https://github.com/olikraus/u8g2.git
     version: c2935e962cbcaa9ed76b7cae30f47be14c860651
