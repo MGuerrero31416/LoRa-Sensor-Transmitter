@@ -1,12 +1,18 @@
-# ESP32 LoRa Analog Sensor Transmitter
+# ESP32 LoRa Sensor Transmitter
 
-Wireless analog sensor transmitter based on the **Heltec WiFi LoRa 32 V4 (SX1262)**. It reads one analog measurement from a Modbus RTU device over an external RS-485 transceiver and sends it to the LoRa gateway.
+Wireless sensor transmitter based on the **Heltec WiFi LoRa 32 V4 (SX1262)**. It supports the Sensirion SEN54 environmental sensor and a Modbus RTU analog sensor over an external RS-485 transceiver.
 
 This project is the transmitter side of the **LoRa BACnet Gateway** located here:
 
 https://github.com/MGuerrero31416/LoRa-BACnet-Gateway
 
-The transmitter reads one analog measurement from a Modbus device and sends it over LoRa to the gateway, which exposes the value through **BACnet MS/TP** for building automation integration such as Johnson Controls Metasys.
+The selected sensor's measurements are sent over LoRa to the gateway, which exposes them through **BACnet MS/TP** for building automation integration such as Johnson Controls Metasys.
+
+## Sensor Selection
+
+Choose **Sensor type** in ESP-IDF menuconfig (`idf.py menuconfig`). The default is **SEN54**; select **Modbus RTU** to use an RS-485 analog sensor. Rebuild after changing the choice. Only the selected sensor is initialized or read.
+
+SEN54 uses Device ID `1` and sends temperature, humidity, PM2.5, and VOC in their original packet fields. Modbus uses Device ID `2` and sends its analog register value in the packet's VOC field; temperature, humidity, and PM2.5 are set to `-1.0`. Use the matching Device ID and sensor selection expected by the gateway. Both selections retain the 26-byte packet format and 10-second transmission interval.
 
 ## Hardware Photos
 
@@ -17,36 +23,23 @@ The transmitter reads one analog measurement from a Modbus device and sends it o
 ## System Architecture
 
 ```text
-Modbus analog sensor
-  |
-  | Modbus RTU / RS-485
-  v
-ESP32-S3 + SX1262
-  |
-  | LoRa
-  v
-LoRa BACnet Gateway
-  |
-  | RS-485 / BACnet MS/TP
-  v
-BACnet MS/TP
-  |
-  v
-Building Automation System
+SEN54 (I2C) ──┐
+              ├──> ESP32-S3 + SX1262 ──LoRa──> LoRa BACnet Gateway
+Modbus RTU ───┘                                      |
+ (RS-485)                                            | RS-485 / BACnet MS/TP
+                                                     v
+                                               Building Automation System
 ```
+
+Select only one sensor. SEN54 uses I2C1 on GPIO4 (SDA) and GPIO6 (SCL); Modbus uses UART1 on GPIO4 (TX) and GPIO6 (RX), so those interfaces share pins.
 
 ## Related Project
 
-The corresponding receiving gateway project is:
-
-**LoRa BACnet Gateway**
-https://github.com/MGuerrero31416/LoRa-BACnet-Gateway
-
-This transmitter sends the wireless sensor payload to that gateway, which decodes the packet and exposes the values over BACnet MS/TP.
+The corresponding receiving gateway is the [LoRa BACnet Gateway](https://github.com/MGuerrero31416/LoRa-BACnet-Gateway). It decodes the transmitter's packet and exposes the received values through BACnet MS/TP.
 
 ## Modbus RTU / RS-485 Wiring
 
-The Modbus master uses UART1 and an external RS-485 transceiver:
+When **Modbus RTU** is selected, the Modbus master uses UART1 and an external RS-485 transceiver:
 
 - ESP32 TX: `GPIO4` to transceiver DI
 - ESP32 RX: `GPIO6` from transceiver RO
@@ -85,33 +78,24 @@ The transmitter sends a fixed 26-byte packet. All multi-byte values use little-e
 | 21 | 4 | VOC index | 32-bit float, little-endian |
 | 25 | 1 | Status | Bit 0 is the boot flag |
 
-The packet fields are:
+For SEN54, the four float fields contain temperature, relative humidity, PM2.5, and VOC. For Modbus RTU, the VOC field contains the analog register value and the other three floats contain `-1.0` to indicate that they are not supplied by that sensor. If Modbus initialization or a register read fails, the VOC field is also `-1.0`. A failed SEN54 read is logged and that cycle is skipped rather than transmitting a packet.
 
-- Protocol version
-- Device ID
-- Sequence number
-- Temperature
-- Relative humidity
-- PM2.5
-- VOC index
-- Status
-
-The protocol includes packet validation, sequence tracking, and transmitter reboot/session handling.
+The first successfully transmitted packet after startup has the boot flag set. Sequence numbers increment after successful transmissions.
 
 ## Hardware
 
 - Heltec WiFi LoRa 32 V4
 - ESP32-S3
 - SX1262 LoRa transceiver
-- Modbus RTU analog sensor and RS-485 transceiver
+- SEN54 environmental sensor OR Modbus RTU analog sensor and RS-485 transceiver
 - SSD1306 128×64 OLED
 
 ## User Settings
 
-Modify these settings before building and flashing the transmitter:
+Choose the sensor with `idf.py menuconfig`, then build with `idf.py build`. The `sdkconfig` file stores the selection for the local build. Flash only after confirming the sensor selection, wiring, and gateway configuration.
 
 - Firmware revision and date: `FIRMWARE_REVISION` and `FIRMWARE_DATE` in [main/main.c](main/main.c).
-- Device identifier: `DEVICE_ID` in [main/main.c](main/main.c). This must match the device identity expected by the gateway.
+- Sensor selection and Device ID: choose the sensor in menuconfig. SEN54 uses ID `1`; Modbus RTU uses ID `2`.
 - Transmission interval: `TRANSMIT_PERIOD_MS` in [main/main.c](main/main.c), in milliseconds.
 - LoRa frequency and transmit power: `LORA_FREQUENCY_HZ` and `LORA_TX_POWER_DBM` in [main/lora_sx1262.h](main/lora_sx1262.h). The gateway and regional radio configuration must use a compatible frequency.
 - LoRa modulation: `LORA_BANDWIDTH`, `LORA_SPREADING_FACTOR`, `LORA_CODING_RATE`, and `LORA_PREAMBLE_LENGTH` in [main/lora_sx1262.h](main/lora_sx1262.h). These settings must match the gateway.
@@ -120,8 +104,6 @@ Modify these settings before building and flashing the transmitter:
 
 Hardware pin mappings are defined in [main/lora_sx1262.c](main/lora_sx1262.c), [main/modbus_sensor.c](main/modbus_sensor.c), and [main/display.c](main/display.c).
 
-## Current Development Status
+## Development Status
 
-The LoRa transmitter and BACnet gateway have been tested as a complete wireless link.
-
-The transmitter reads one Modbus RTU analog register and temporarily places its value in the packet's existing VOC float field. If the Modbus master cannot initialize or a register read fails, the transmitter sends `-1.0` in that field to indicate an unavailable measurement, then waits 10 seconds before the next retry/transmission cycle. When the measurement is available, the transmitter retains its regular 10-second transmission schedule. The telemetry packet remains 26 bytes with its current version and offsets; temperature, humidity, and PM2.5 are also encoded as `-1.0` (unavailable).
+The Modbus RTU transmitter and BACnet gateway have been tested as a complete wireless link. SEN54 support preserves the original sensor acquisition and telemetry path. Both modes use the same 26-byte packet format and 10-second transmission interval; their sensor values and unavailable-measurement behavior differ as described above.

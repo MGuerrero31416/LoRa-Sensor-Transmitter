@@ -1,0 +1,11 @@
+choice SENSOR_TYPE
+    prompt "Sensor type"
+    default SENSOR_TYPE_SEN54
+
+config SENSOR_TYPE_SEN54
+    bool "SEN54"
+
+config SENSOR_TYPE_MODBUS
+    bool "Modbus RTU"
+
+endchoice

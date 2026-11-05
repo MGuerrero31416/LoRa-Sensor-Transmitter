@@ -8,4 +8,7 @@
 
 esp_err_t display_init(void);
 esp_err_t display_show_tx(uint32_t device_id, uint32_t transmitted, float analog_value);
+esp_err_t display_show_sen54_tx(uint32_t device_id, uint32_t transmitted, float voc,
+                                float temperature, float pm2_5, float humidity);
 esp_err_t display_show_measurement_unavailable(void);
+esp_err_t display_show_sensor_unavailable(void);

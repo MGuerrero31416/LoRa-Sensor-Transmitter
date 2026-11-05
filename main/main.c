@@ -7,27 +7,38 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lora_sx1262.h"
+#include "sdkconfig.h"
+#if CONFIG_SENSOR_TYPE_MODBUS
 #include "modbus_sensor.h"
+#define DEVICE_ID 2
+#else
+#include "sen54.h"
+#define DEVICE_ID 1
+#endif
 #include "telemetry_packet.h"
 
 const char FIRMWARE_REVISION[] = "1.3";
 const char FIRMWARE_DATE[] = "2026_09_25";
-#define DEVICE_ID 2
 #define TRANSMIT_PERIOD_MS 10000
 
 static const char *TAG = "lora_tx";
 
-static esp_err_t display_show_measurement_unavailable_with_recovery(esp_err_t display_error)
+static esp_err_t display_show_unavailable_with_recovery(esp_err_t display_error)
 {
     if (display_error != ESP_OK) {
         display_error = display_init();
     }
     if (display_error == ESP_OK) {
+#if CONFIG_SENSOR_TYPE_MODBUS
         display_error = display_show_measurement_unavailable();
+#else
+        display_error = display_show_sensor_unavailable();
+#endif
     }
     return display_error;
 }
 
+#if CONFIG_SENSOR_TYPE_MODBUS
 static void wait_for_next_transmission(bool measurement_available, TickType_t *next_transmission)
 {
     TickType_t transmit_period = pdMS_TO_TICKS(TRANSMIT_PERIOD_MS);
@@ -38,6 +49,7 @@ static void wait_for_next_transmission(bool measurement_available, TickType_t *n
         *next_transmission = xTaskGetTickCount();
     }
 }
+#endif
 
 /* Main sensor loop: initialize peripherals, build a telemetry packet, and periodically transmit it. */
 void app_main(void)
@@ -46,11 +58,19 @@ void app_main(void)
     if (display_error != ESP_OK) {
         ESP_LOGE(TAG, "OLED unavailable: %s; continuing without display", esp_err_to_name(display_error));
     }
+#if CONFIG_SENSOR_TYPE_MODBUS
     esp_err_t modbus_error = modbus_sensor_init();
     if (modbus_error != ESP_OK) {
         ESP_LOGE(TAG, "Modbus sensor unavailable: %s; will retry", esp_err_to_name(modbus_error));
-        display_error = display_show_measurement_unavailable_with_recovery(display_error);
+        display_error = display_show_unavailable_with_recovery(display_error);
     }
+#else
+    esp_err_t sensor_error = sen54_init();
+    if (sensor_error != ESP_OK) {
+        ESP_LOGE(TAG, "SEN54 unavailable: %s; will retry", esp_err_to_name(sensor_error));
+        display_error = display_show_unavailable_with_recovery(display_error);
+    }
+#endif
     ESP_ERROR_CHECK(lora_init());
     ESP_LOGI(TAG, "========================================");
     ESP_LOGI(TAG, "Application configuration");
@@ -66,6 +86,13 @@ void app_main(void)
     ESP_LOGI(TAG, "LoRa TX power: %d dBm", LORA_TX_POWER_DBM);
     ESP_LOGI(TAG, "Packet version: %u", (unsigned)TELEMETRY_PACKET_VERSION);
     ESP_LOGI(TAG, "Packet length: %u bytes", (unsigned)TELEMETRY_PACKET_LEN);
+#if CONFIG_SENSOR_TYPE_MODBUS
+    ESP_LOGI(TAG, "Sensor: Modbus RTU");
+#else
+    ESP_LOGI(TAG, "Sensor: SEN54");
+    ESP_LOGI(TAG, "SEN54 I2C address: 0x%02X", (unsigned)SEN54_ADDRESS);
+    ESP_LOGI(TAG, "SEN54 I2C frequency: %u Hz", (unsigned)SEN54_I2C_FREQUENCY_HZ);
+#endif
     ESP_LOGI(TAG, "OLED I2C address: 0x%02X", (unsigned)OLED_ADDRESS);
     ESP_LOGI(TAG, "OLED I2C frequency: %u Hz", (unsigned)OLED_I2C_FREQUENCY_HZ);
     ESP_LOGI(TAG, "========================================");
@@ -76,6 +103,7 @@ void app_main(void)
     bool first_packet = true;
     TickType_t next_transmission = xTaskGetTickCount();
     while (true) {
+#if CONFIG_SENSOR_TYPE_MODBUS
         modbus_measurement_t measurement = {.value = -1.0f};
         bool measurement_available = false;
         if (modbus_error != ESP_OK) {
@@ -95,22 +123,60 @@ void app_main(void)
             }
         }
         if (!measurement_available) {
-            display_error = display_show_measurement_unavailable_with_recovery(display_error);
+            display_error = display_show_unavailable_with_recovery(display_error);
+        }
+#else
+        sen54_measurement_t measurement = {0};
+        if (sensor_error != ESP_OK) {
+            sensor_error = sen54_init();
+            if (sensor_error != ESP_OK) {
+                ESP_LOGE(TAG, "SEN54 initialization retry failed: %s", esp_err_to_name(sensor_error));
+                display_error = display_show_unavailable_with_recovery(display_error);
+                vTaskDelayUntil(&next_transmission, pdMS_TO_TICKS(TRANSMIT_PERIOD_MS));
+                continue;
+            }
         }
 
+        esp_err_t error = sen54_read_measurement(&measurement);
+        if (error != ESP_OK) {
+            ESP_LOGE(TAG, "SENSOR ERROR: %s", esp_err_to_name(error));
+            if (error != ESP_ERR_NOT_FINISHED) {
+                sensor_error = error;
+            }
+            display_error = display_show_unavailable_with_recovery(display_error);
+            vTaskDelayUntil(&next_transmission, pdMS_TO_TICKS(TRANSMIT_PERIOD_MS));
+            continue;
+        }
+#endif
+
         uint8_t payload[TELEMETRY_PACKET_LEN];
+#if CONFIG_SENSOR_TYPE_MODBUS
         esp_err_t error = telemetry_packet_encode(payload, sizeof(payload), DEVICE_ID, sequence,
                                                    first_packet, &measurement);
+#else
+        error = telemetry_packet_encode_sen54(payload, sizeof(payload), DEVICE_ID, sequence,
+                                              first_packet, &measurement);
+#endif
         if (error != ESP_OK) {
             ESP_LOGE(TAG, "packet encoding failed: %s", esp_err_to_name(error));
+#if CONFIG_SENSOR_TYPE_MODBUS
             wait_for_next_transmission(measurement_available, &next_transmission);
+#else
+            vTaskDelayUntil(&next_transmission, pdMS_TO_TICKS(TRANSMIT_PERIOD_MS));
+#endif
             continue;
         }
 
         error = lora_send(payload, sizeof(payload));
         if (error == ESP_OK) {
+#if CONFIG_SENSOR_TYPE_MODBUS
             ESP_LOGI(TAG, "TX: seq=%" PRIu32 " device=%" PRIu32 " analog=%.2f status=%u%s len=%u",
                      sequence, (uint32_t)DEVICE_ID, measurement.value, payload[TELEMETRY_PACKET_LEN - 1],
+#else
+            ESP_LOGI(TAG, "TX: seq=%" PRIu32 " device=%" PRIu32 " temp=%.2f rh=%.2f pm2.5=%.2f voc=%.2f status=%u%s len=%u",
+                     sequence, (uint32_t)DEVICE_ID, measurement.temperature, measurement.humidity,
+                     measurement.pm2_5, measurement.voc, payload[TELEMETRY_PACKET_LEN - 1],
+#endif
                      (payload[TELEMETRY_PACKET_LEN - 1] & TELEMETRY_STATUS_BOOT) != 0 ? " BOOT" : "",
                      (unsigned)sizeof(payload));
             if (first_packet) {
@@ -119,11 +185,21 @@ void app_main(void)
             }
             sequence++;
             transmitted++;
+#if CONFIG_SENSOR_TYPE_MODBUS
             if (measurement_available && display_error != ESP_OK) {
                 display_error = display_init();
             }
             if (measurement_available && display_error == ESP_OK) {
                 esp_err_t update_error = display_show_tx(DEVICE_ID, transmitted, measurement.value);
+#else
+            if (display_error != ESP_OK) {
+                display_error = display_init();
+            }
+            if (display_error == ESP_OK) {
+                esp_err_t update_error = display_show_sen54_tx(DEVICE_ID, transmitted, measurement.voc,
+                                                               measurement.temperature, measurement.pm2_5,
+                                                               measurement.humidity);
+#endif
                 if (update_error != ESP_OK) {
                     ESP_LOGE(TAG, "OLED update failed: %s", esp_err_to_name(update_error));
                     display_error = display_init();
@@ -136,6 +212,10 @@ void app_main(void)
         if (error != ESP_OK) {
             ESP_LOGE(TAG, "cycle failed: %s", esp_err_to_name(error));
         }
+#if CONFIG_SENSOR_TYPE_MODBUS
         wait_for_next_transmission(measurement_available, &next_transmission);
+#else
+        vTaskDelayUntil(&next_transmission, pdMS_TO_TICKS(TRANSMIT_PERIOD_MS));
+#endif
     }
 }

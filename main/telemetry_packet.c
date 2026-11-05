@@ -2,6 +2,8 @@
 
 #include <string.h>
 
+#include "esp_check.h"
+
 static void put_u32_le(uint8_t *buffer, uint32_t value)
 {
     buffer[0] = (uint8_t)value;
@@ -17,11 +19,10 @@ static void put_float_le(uint8_t *buffer, float value)
     put_u32_le(buffer, representation);
 }
 
-esp_err_t telemetry_packet_encode(uint8_t *packet, size_t packet_length, uint32_t device_id,
-                                  uint32_t sequence, bool first_packet,
-                                  const modbus_measurement_t *measurement)
+static esp_err_t telemetry_packet_initialize(uint8_t *packet, size_t packet_length, uint32_t device_id,
+                                             uint32_t sequence, bool first_packet)
 {
-    if (packet == NULL || measurement == NULL) {
+    if (packet == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
     if (packet_length != TELEMETRY_PACKET_LEN) {
@@ -32,10 +33,38 @@ esp_err_t telemetry_packet_encode(uint8_t *packet, size_t packet_length, uint32_
     packet[0] = TELEMETRY_PACKET_VERSION;
     put_u32_le(&packet[1], device_id);
     put_u32_le(&packet[5], sequence);
+    packet[25] = first_packet ? TELEMETRY_STATUS_BOOT : 0;
+    return ESP_OK;
+}
+
+esp_err_t telemetry_packet_encode(uint8_t *packet, size_t packet_length, uint32_t device_id,
+                                  uint32_t sequence, bool first_packet,
+                                  const modbus_measurement_t *measurement)
+{
+    if (measurement == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    ESP_RETURN_ON_ERROR(telemetry_packet_initialize(packet, packet_length, device_id, sequence, first_packet),
+                        "telemetry_packet", "packet initialization failed");
     put_float_le(&packet[9], -1.0f);
     put_float_le(&packet[13], -1.0f);
     put_float_le(&packet[17], -1.0f);
     put_float_le(&packet[21], measurement->value);
-    packet[25] = first_packet ? TELEMETRY_STATUS_BOOT : 0;
+    return ESP_OK;
+}
+
+esp_err_t telemetry_packet_encode_sen54(uint8_t *packet, size_t packet_length, uint32_t device_id,
+                                         uint32_t sequence, bool first_packet,
+                                         const sen54_measurement_t *measurement)
+{
+    if (measurement == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    ESP_RETURN_ON_ERROR(telemetry_packet_initialize(packet, packet_length, device_id, sequence, first_packet),
+                        "telemetry_packet", "packet initialization failed");
+    put_float_le(&packet[9], measurement->temperature);
+    put_float_le(&packet[13], measurement->humidity);
+    put_float_le(&packet[17], measurement->pm2_5);
+    put_float_le(&packet[21], measurement->voc);
     return ESP_OK;
 }
