@@ -1,12 +1,18 @@
-# ESP32 LoRa Room Sensor Transmitter — SEN54 / SEN56
+# ESP32 LoRa Sensor Transmitter
 
-Wireless room sensor transmitter based on the **Heltec WiFi LoRa 32 V4 (SX1262)** and a **Sensirion SEN54 environmental sensor**. The firmware uses the SEN54 command set; SEN56 compatibility is hardware-dependent and has not been independently verified here.
+Wireless sensor transmitter based on the **Heltec WiFi LoRa 32 V4 (SX1262)**. It supports the Sensirion SEN54 environmental sensor and a Modbus RTU analog sensor over an external RS-485 transceiver.
 
 This project is the transmitter side of the **LoRa BACnet Gateway** located here:
 
 https://github.com/MGuerrero31416/LoRa-BACnet-Gateway
 
-The transmitter reads the air quality and environmental data from the sensor and sends it over LoRa to the gateway, which exposes the values through **BACnet MS/TP** for building automation integration such as Johnson Controls Metasys.
+The selected sensor's measurements are sent over LoRa to the gateway, which exposes them through **BACnet MS/TP** for building automation integration such as Johnson Controls Metasys.
+
+## Sensor Selection
+
+Choose **Sensor type** in ESP-IDF menuconfig (`idf.py menuconfig`). The default is **SEN54**; select **Modbus RTU** to use an RS-485 analog sensor. Rebuild after changing the choice. Only the selected sensor is initialized or read.
+
+SEN54 uses Device ID `1` and sends temperature, humidity, PM2.5, and VOC in their original packet fields. Modbus uses Device ID `2` and sends its analog register value in the packet's VOC field; temperature, humidity, and PM2.5 are set to `-1.0`. Use the matching Device ID and sensor selection expected by the gateway. Both selections retain the 26-byte packet format and 10-second transmission interval.
 
 ## Hardware Photos
 
@@ -17,44 +23,32 @@ The transmitter reads the air quality and environmental data from the sensor and
 ## System Architecture
 
 ```text
-SEN54
-  |
-  v
-ESP32-S3 + SX1262
-  |
-  | LoRa
-  v
-LoRa BACnet Gateway
-  |
-  | RS-485 / BACnet MS/TP
-  v
-BACnet MS/TP
-  |
-  v
-Building Automation System
+SEN54 (I2C) ──┐
+              ├──> ESP32-S3 + SX1262 ──LoRa──> LoRa BACnet Gateway
+Modbus RTU ───┘                                      |
+ (RS-485)                                            | RS-485 / BACnet MS/TP
+                                                     v
+                                               Building Automation System
 ```
+
+Select only one sensor. SEN54 uses I2C1 on GPIO4 (SDA) and GPIO6 (SCL); Modbus uses UART1 on GPIO4 (TX) and GPIO6 (RX), so those interfaces share pins.
 
 ## Related Project
 
-The corresponding receiving gateway project is:
+The corresponding receiving gateway is the [LoRa BACnet Gateway](https://github.com/MGuerrero31416/LoRa-BACnet-Gateway). It decodes the transmitter's packet and exposes the received values through BACnet MS/TP.
 
-**LoRa BACnet Gateway**
-https://github.com/MGuerrero31416/LoRa-BACnet-Gateway
+## Modbus RTU / RS-485 Wiring
 
-This transmitter sends the wireless sensor payload to that gateway, which decodes the packet and exposes the values over BACnet MS/TP.
+When **Modbus RTU** is selected, the Modbus master uses UART1 and an external RS-485 transceiver:
 
-## Sensor GPIO / I2C Wiring
+- ESP32 TX: `GPIO4` to transceiver DI
+- ESP32 RX: `GPIO6` from transceiver RO
+- UART RTS: `GPIO5` connected to both transceiver DE and active-low `/RE`
+- Transceiver A/B: to the Modbus device's RS-485 pair; connect grounds
 
-The current code configures a Sensirion SEN54 on the ESP32's I2C port 1:
+GPIO4, GPIO5, and GPIO6 are exposed on Heltec V4.2.0 header J3 pins 15, 16, and 17 respectively. GPIO5 is not used by the firmware's LoRa or OLED mappings and is configured as the hardware UART RTS direction signal. The ESP-Modbus RTU master sets UART1 to hardware half-duplex mode; no GPIO direction-control task is used.
 
-- Sensor: Sensirion SEN54
-- I2C bus: `I2C_NUM_1`
-- SDA GPIO: `GPIO4`
-- SCL GPIO: `GPIO6`
-- I2C address: `0x69`
-- Clock speed: `100000 Hz`
-
-This is the exact hardware mapping implemented in the device firmware.
+Modbus settings are grouped at the top of [main/modbus_sensor.c](main/modbus_sensor.c): unit ID `1`, input register function `0x04`, zero-based register address `0`, 9600 baud, 8N1, and scale `1.0` with offset `0.0`. Change these to match the connected device. The default measurement is an unsigned 16-bit register value converted as `raw * scale + offset`.
 
 ## OLED GPIO / I2C Wiring
 
@@ -84,44 +78,32 @@ The transmitter sends a fixed 26-byte packet. All multi-byte values use little-e
 | 21 | 4 | VOC index | 32-bit float, little-endian |
 | 25 | 1 | Status | Bit 0 is the boot flag |
 
-The packet fields are:
+For SEN54, the four float fields contain temperature, relative humidity, PM2.5, and VOC. For Modbus RTU, the VOC field contains the analog register value and the other three floats contain `-1.0` to indicate that they are not supplied by that sensor. If Modbus initialization or a register read fails, the VOC field is also `-1.0`. A failed SEN54 read is logged and that cycle is skipped rather than transmitting a packet.
 
-- Protocol version
-- Device ID
-- Sequence number
-- Temperature
-- Relative humidity
-- PM2.5
-- VOC index
-- Status
-
-The protocol includes packet validation, sequence tracking, and transmitter reboot/session handling.
+The first successfully transmitted packet after startup has the boot flag set. Sequence numbers increment after successful transmissions.
 
 ## Hardware
 
 - Heltec WiFi LoRa 32 V4
 - ESP32-S3
 - SX1262 LoRa transceiver
-- Sensirion SEN54 / SEN56-class sensor
+- SEN54 environmental sensor OR Modbus RTU analog sensor and RS-485 transceiver
 - SSD1306 128×64 OLED
 
 ## User Settings
 
-Modify these settings before building and flashing the transmitter:
+Choose the sensor with `idf.py menuconfig`, then build with `idf.py build`. The `sdkconfig` file stores the selection for the local build. Flash only after confirming the sensor selection, wiring, and gateway configuration.
 
 - Firmware revision and date: `FIRMWARE_REVISION` and `FIRMWARE_DATE` in [main/main.c](main/main.c).
-- Device identifier: `DEVICE_ID` in [main/main.c](main/main.c). This must match the device identity expected by the gateway.
+- Sensor selection and Device ID: choose the sensor in menuconfig. SEN54 uses ID `1`; Modbus RTU uses ID `2`.
 - Transmission interval: `TRANSMIT_PERIOD_MS` in [main/main.c](main/main.c), in milliseconds.
 - LoRa frequency and transmit power: `LORA_FREQUENCY_HZ` and `LORA_TX_POWER_DBM` in [main/lora_sx1262.h](main/lora_sx1262.h). The gateway and regional radio configuration must use a compatible frequency.
 - LoRa modulation: `LORA_BANDWIDTH`, `LORA_SPREADING_FACTOR`, `LORA_CODING_RATE`, and `LORA_PREAMBLE_LENGTH` in [main/lora_sx1262.h](main/lora_sx1262.h). These settings must match the gateway.
 - Packet format: `TELEMETRY_PACKET_VERSION` and `TELEMETRY_PACKET_LEN` in [main/telemetry_packet.h](main/telemetry_packet.h). Changes require corresponding gateway updates.
-- SEN54 I2C address and speed: `SEN54_ADDRESS` and `SEN54_I2C_FREQUENCY_HZ` in [main/sen54.h](main/sen54.h).
 - OLED I2C address and speed: `OLED_ADDRESS` and `OLED_I2C_FREQUENCY_HZ` in [main/display.h](main/display.h).
 
-Hardware pin mappings are defined in [main/lora_sx1262.c](main/lora_sx1262.c), [main/sen54.c](main/sen54.c), and [main/display.c](main/display.c).
+Hardware pin mappings are defined in [main/lora_sx1262.c](main/lora_sx1262.c), [main/modbus_sensor.c](main/modbus_sensor.c), and [main/display.c](main/display.c).
 
-## Current Development Status
+## Development Status
 
-The LoRa transmitter and BACnet gateway have been tested as a complete wireless link.
-
-Initial development included dummy sensor data for validation before connecting the environmental sensor. The production configuration reads the SEN54 sensor and transmits the measured values to the LoRa/BACnet gateway.
+The Modbus RTU transmitter and BACnet gateway have been tested as a complete wireless link. SEN54 support preserves the original sensor acquisition and telemetry path. Both modes use the same 26-byte packet format and 10-second transmission interval; their sensor values and unavailable-measurement behavior differ as described above.

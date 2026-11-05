@@ -35,5 +35,5 @@
     "--compile-commands-dir=c:\\ESP_3\\LoRa_Sensor-Transmitter\\build"
   ],
   "idf.flashType": "UART",
-  "idf.port": "COM5"
+  "idf.port": "COM7"
 }

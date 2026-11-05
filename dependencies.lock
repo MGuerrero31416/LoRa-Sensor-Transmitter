@@ -1,4 +1,14 @@
 dependencies:
+  espressif/esp-modbus:
+    component_hash: 26a64a9531b5e15a1bbdb9064f2f8715df5b150bfb821dd493174a5aa7566bf8
+    dependencies:
+    - name: idf
+      require: private
+      version: '>=5.0'
+    source:
+      registry_url: https://components.espressif.com/
+      type: service
+    version: 2.1.4
   idf:
     source:
       type: idf
@@ -12,7 +22,8 @@ dependencies:
       type: git
     version: c2935e962cbcaa9ed76b7cae30f47be14c860651
 direct_dependencies:
+- espressif/esp-modbus
 - u8g2
-manifest_hash: 21311aadd3dacc72a8b35fa83800792bf9057a8237b796dd9e1ace3af1c93ec5
+manifest_hash: 72719f3b403e7d3e3cc6d4d987fd5376154be0e61fee3ebf57c28215438ae99a
 target: esp32s3
 version: 3.0.0

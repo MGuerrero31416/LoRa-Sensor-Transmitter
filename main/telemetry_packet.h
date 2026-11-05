@@ -5,6 +5,7 @@
 #include <stdint.h>
 
 #include "esp_err.h"
+#include "modbus_sensor.h"
 #include "sen54.h"
 
 #define TELEMETRY_PACKET_LEN 26
@@ -15,4 +16,7 @@ _Static_assert(TELEMETRY_PACKET_LEN == 26, "unexpected telemetry packet length")
 
 esp_err_t telemetry_packet_encode(uint8_t *packet, size_t packet_length, uint32_t device_id,
                                   uint32_t sequence, bool first_packet,
-                                  const sen54_measurement_t *measurement);
+                                  const modbus_measurement_t *measurement);
+esp_err_t telemetry_packet_encode_sen54(uint8_t *packet, size_t packet_length, uint32_t device_id,
+                                         uint32_t sequence, bool first_packet,
+                                         const sen54_measurement_t *measurement);
