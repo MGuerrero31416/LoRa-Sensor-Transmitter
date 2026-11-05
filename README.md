@@ -72,13 +72,13 @@ The transmitter sends a fixed 26-byte packet. All multi-byte values use little-e
 | 0 | 1 | Protocol version | `uint8_t` |
 | 1 | 4 | Device ID | `uint32_t`, little-endian |
 | 5 | 4 | Sequence number | `uint32_t`, little-endian |
-| 9 | 4 | Temperature | 32-bit float, little-endian |
-| 13 | 4 | Relative humidity | 32-bit float, little-endian |
-| 17 | 4 | PM2.5 | 32-bit float, little-endian |
-| 21 | 4 | VOC index | 32-bit float, little-endian |
+| 9 | 4 | Temperature (SEN54) / unavailable (`-1.0`, Modbus) | 32-bit float, little-endian |
+| 13 | 4 | Relative humidity (SEN54) / unavailable (`-1.0`, Modbus) | 32-bit float, little-endian |
+| 17 | 4 | PM2.5 (SEN54) / unavailable (`-1.0`, Modbus) | 32-bit float, little-endian |
+| 21 | 4 | VOC index (SEN54) / analog measurement (Modbus) | 32-bit float, little-endian |
 | 25 | 1 | Status | Bit 0 is the boot flag |
 
-For SEN54, the four float fields contain temperature, relative humidity, PM2.5, and VOC. For Modbus RTU, the VOC field contains the analog register value and the other three floats contain `-1.0` to indicate that they are not supplied by that sensor. If Modbus initialization or a register read fails, the VOC field is also `-1.0`. A failed SEN54 read is logged and that cycle is skipped rather than transmitting a packet.
+With SEN54 selected (Device ID `1`), offsets 9, 13, 17, and 21 contain temperature, relative humidity, PM2.5, and VOC respectively. With Modbus RTU selected (Device ID `2`), offset 21 contains the converted analog register value (`raw * scale + offset`); the other three float fields are `-1.0`. If Modbus initialization or a register read fails, the value at offset 21 is also `-1.0`, and the transmitter sends the packet and retries on its normal cycle. A failed SEN54 read is logged and that cycle is skipped rather than transmitting a packet.
 
 The first successfully transmitted packet after startup has the boot flag set. Sequence numbers increment after successful transmissions.
 
