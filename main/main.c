@@ -28,6 +28,17 @@ static esp_err_t display_show_measurement_unavailable_with_recovery(esp_err_t di
     return display_error;
 }
 
+static void wait_for_next_transmission(bool measurement_available, TickType_t *next_transmission)
+{
+    TickType_t transmit_period = pdMS_TO_TICKS(TRANSMIT_PERIOD_MS);
+    if (measurement_available) {
+        vTaskDelayUntil(next_transmission, transmit_period);
+    } else {
+        vTaskDelay(transmit_period);
+        *next_transmission = xTaskGetTickCount();
+    }
+}
+
 /* Main sensor loop: initialize peripherals, build a telemetry packet, and periodically transmit it. */
 void app_main(void)
 {
@@ -65,29 +76,34 @@ void app_main(void)
     bool first_packet = true;
     TickType_t next_transmission = xTaskGetTickCount();
     while (true) {
-        modbus_measurement_t measurement = {0};
+        modbus_measurement_t measurement = {.value = -1.0f};
+        bool measurement_available = false;
         if (modbus_error != ESP_OK) {
             modbus_error = modbus_sensor_init();
             if (modbus_error != ESP_OK) {
                 ESP_LOGE(TAG, "Modbus master initialization retry failed: %s", esp_err_to_name(modbus_error));
-                display_error = display_show_measurement_unavailable_with_recovery(display_error);
-                vTaskDelayUntil(&next_transmission, pdMS_TO_TICKS(TRANSMIT_PERIOD_MS));
-                continue;
             }
         }
 
-        esp_err_t error = modbus_sensor_read_measurement(&measurement);
-        if (error != ESP_OK) {
-            ESP_LOGE(TAG, "MODBUS READ ERROR: %s", esp_err_to_name(error));
-            display_error = display_show_measurement_unavailable_with_recovery(display_error);
-            vTaskDelayUntil(&next_transmission, pdMS_TO_TICKS(TRANSMIT_PERIOD_MS));
-            continue;
+        if (modbus_error == ESP_OK) {
+            esp_err_t read_error = modbus_sensor_read_measurement(&measurement);
+            if (read_error != ESP_OK) {
+                ESP_LOGE(TAG, "MODBUS READ ERROR: %s", esp_err_to_name(read_error));
+                measurement.value = -1.0f;
+            } else {
+                measurement_available = true;
+            }
         }
+        if (!measurement_available) {
+            display_error = display_show_measurement_unavailable_with_recovery(display_error);
+        }
+
         uint8_t payload[TELEMETRY_PACKET_LEN];
-        error = telemetry_packet_encode(payload, sizeof(payload), DEVICE_ID, sequence, first_packet, &measurement);
+        esp_err_t error = telemetry_packet_encode(payload, sizeof(payload), DEVICE_ID, sequence,
+                                                   first_packet, &measurement);
         if (error != ESP_OK) {
             ESP_LOGE(TAG, "packet encoding failed: %s", esp_err_to_name(error));
-            vTaskDelayUntil(&next_transmission, pdMS_TO_TICKS(TRANSMIT_PERIOD_MS));
+            wait_for_next_transmission(measurement_available, &next_transmission);
             continue;
         }
 
@@ -103,10 +119,10 @@ void app_main(void)
             }
             sequence++;
             transmitted++;
-            if (display_error != ESP_OK) {
+            if (measurement_available && display_error != ESP_OK) {
                 display_error = display_init();
             }
-            if (display_error == ESP_OK) {
+            if (measurement_available && display_error == ESP_OK) {
                 esp_err_t update_error = display_show_tx(DEVICE_ID, transmitted, measurement.value);
                 if (update_error != ESP_OK) {
                     ESP_LOGE(TAG, "OLED update failed: %s", esp_err_to_name(update_error));
@@ -120,6 +136,6 @@ void app_main(void)
         if (error != ESP_OK) {
             ESP_LOGE(TAG, "cycle failed: %s", esp_err_to_name(error));
         }
-        vTaskDelayUntil(&next_transmission, pdMS_TO_TICKS(TRANSMIT_PERIOD_MS));
+        wait_for_next_transmission(measurement_available, &next_transmission);
     }
 }

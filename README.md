@@ -124,4 +124,4 @@ Hardware pin mappings are defined in [main/lora_sx1262.c](main/lora_sx1262.c), [
 
 The LoRa transmitter and BACnet gateway have been tested as a complete wireless link.
 
-The transmitter reads one Modbus RTU analog register and temporarily places its value in the packet's existing VOC float field. The telemetry packet remains 26 bytes with its current version and offsets; temperature, humidity, and PM2.5 are encoded as `-1.0` (unavailable).
+The transmitter reads one Modbus RTU analog register and temporarily places its value in the packet's existing VOC float field. If the Modbus master cannot initialize or a register read fails, the transmitter sends `-1.0` in that field to indicate an unavailable measurement, then waits 10 seconds before the next retry/transmission cycle. When the measurement is available, the transmitter retains its regular 10-second transmission schedule. The telemetry packet remains 26 bytes with its current version and offsets; temperature, humidity, and PM2.5 are also encoded as `-1.0` (unavailable).
