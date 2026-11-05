@@ -1,24 +1,30 @@
-# ESP32 LoRa Sensor Transmitter
+# ESP32 LoRa Modbus Sensor Transmitter
 
-Wireless sensor transmitter based on the **Heltec WiFi LoRa 32 V4 (SX1262)**. It supports the Sensirion SEN54 environmental sensor and a Modbus RTU analog sensor over an external RS-485 transceiver.
+Wireless sensor transmitter based on the **Heltec WiFi LoRa 32 V3 and V4 (SX1262)**. It supports either the Sensirion SEN54 environmental sensor and a Modbus RTU analog sensor connected through an RS-485 transceiver. 
+
+The current Modbus configuration reads a single unsigned 16-bit analog register. The register mapping, data type, scaling and offset can be adjusted to match the connected sensor. The implementation can also be extended to support multiple registers or other data types.
 
 This project is the transmitter side of the **LoRa BACnet Gateway** located here:
 
 https://github.com/MGuerrero31416/LoRa-BACnet-Gateway
 
-The selected sensor's measurements are sent over LoRa to the gateway, which exposes them through **BACnet MS/TP** for building automation integration such as Johnson Controls Metasys.
+The selected sensor's measurements are sent over LoRa to the gateway, which exposes them through **BACnet MS/TP** for building automation integration. Tested with a Johnson Controls Metasys.
 
 ## Sensor Selection
 
 Choose **Sensor type** in ESP-IDF menuconfig (`idf.py menuconfig`). The default is **SEN54**; select **Modbus RTU** to use an RS-485 analog sensor. Rebuild after changing the choice. Only the selected sensor is initialized or read.
 
-SEN54 uses Device ID `1` and sends temperature, humidity, PM2.5, and VOC in their original packet fields. Modbus uses Device ID `2` and sends its analog register value in the packet's VOC field; temperature, humidity, and PM2.5 are set to `-1.0`. Use the matching Device ID and sensor selection expected by the gateway. Both selections retain the 26-byte packet format and 10-second transmission interval.
+**SEN54** uses Device ID `1` and sends temperature, humidity, PM2.5, and VOC in their original packet fields. 
+**Modbus** uses Device ID `2` and sends its analog register value in the packet's VOC field. Temperature, humidity, and PM2.5 are set to `-1.0` to indicate unavailable measurements.. Use the matching Device ID and sensor selection expected by the gateway. 
+
+Both selections retain the 26-byte packet format and 10-second transmission interval.
 
 ## Hardware Photos
 
-<img src="docs/images/TX.jpg" alt="LoRa sensor transmitter board" width="100%" />
-
-<img src="docs/images/TX-RX.jpg" alt="LoRa transmitter and receiver setup" width="100%" />
+<img src="docs/images/TX.jpg" alt="LoRa sensor transmitter" />
+<img src="docs/images/TX_2.jpg" alt="LoRa sensor transmitter" />
+<img src="docs/images/TX-RX.jpg" alt="LoRa transmitter and receiver setup" />
+<img src="docs/images/RX_2.jpg" alt="LoRa receiver connected to Johnson Controls NAE" />
 
 ## System Architecture
 
@@ -31,7 +37,7 @@ Modbus RTU ───┘                                      |
                                                Building Automation System
 ```
 
-Select only one sensor. SEN54 uses I2C1 on GPIO4 (SDA) and GPIO6 (SCL); Modbus uses UART1 on GPIO4 (TX) and GPIO6 (RX), so those interfaces share pins.
+Only one sensor can be selected at a time. SEN54 uses I2C on GPIO4 (SDA) and GPIO6 (SCL), while Modbus uses UART1 on GPIO4 (TX) and GPIO6 (RX). These interfaces share pins and therefore cannot be used simultaneously.
 
 ## Related Project
 
@@ -46,9 +52,26 @@ When **Modbus RTU** is selected, the Modbus master uses UART1 and an external RS
 - UART RTS: `GPIO5` connected to both transceiver DE and active-low `/RE`
 - Transceiver A/B: to the Modbus device's RS-485 pair; connect grounds
 
-GPIO4, GPIO5, and GPIO6 are exposed on Heltec V4.2.0 header J3 pins 15, 16, and 17 respectively. GPIO5 is not used by the firmware's LoRa or OLED mappings and is configured as the hardware UART RTS direction signal. The ESP-Modbus RTU master sets UART1 to hardware half-duplex mode; no GPIO direction-control task is used.
+GPIO4, GPIO5 and GPIO6 are exposed on the Heltec V4.2.0 header J3 pins 15, 16 and 17, respectively. GPIO5 is not used by the firmware's LoRa or OLED mappings and is configured as the hardware UART RTS direction signal.
 
-Modbus settings are grouped at the top of [main/modbus_sensor.c](main/modbus_sensor.c): unit ID `1`, input register function `0x04`, zero-based register address `0`, 9600 baud, 8N1, and scale `1.0` with offset `0.0`. Change these to match the connected device. The default measurement is an unsigned 16-bit register value converted as `raw * scale + offset`.
+The ESP-Modbus RTU master configures UART1 for hardware RS-485 half-duplex operation. No separate GPIO direction-control task is used.
+
+Modbus settings are grouped at the top of main/modbus_sensor.c:
+
+- Slave/unit ID: 1
+- Register function: 0x04 (Read Input Registers)
+- Register address: 0 (zero-based)
+- Register count: 1
+- Baud rate: 9600
+- Serial format: 8N1
+- Scale: 1.0
+- Offset: 0.0
+
+Adjust these settings to match the connected device.
+
+The default measurement is an unsigned 16-bit register value converted using:
+
+measurement = raw * scale + offset
 
 ## OLED GPIO / I2C Wiring
 
@@ -84,7 +107,7 @@ The first successfully transmitted packet after startup has the boot flag set. S
 
 ## Hardware
 
-- Heltec WiFi LoRa 32 V4
+- Heltec WiFi LoRa 32 V3 and V4
 - ESP32-S3
 - SX1262 LoRa transceiver
 - SEN54 environmental sensor OR Modbus RTU analog sensor and RS-485 transceiver
@@ -106,4 +129,6 @@ Hardware pin mappings are defined in [main/lora_sx1262.c](main/lora_sx1262.c), [
 
 ## Development Status
 
-The Modbus RTU transmitter and BACnet gateway have been tested as a complete wireless link. SEN54 support preserves the original sensor acquisition and telemetry path. Both modes use the same 26-byte packet format and 10-second transmission interval; their sensor values and unavailable-measurement behavior differ as described above.
+The Modbus RTU transmitter and LoRa BACnet gateway have been tested as a complete wireless link.
+
+The SEN54 configuration preserves the original sensor acquisition and telemetry behavior. Both configurations use the same 26-byte packet format and 10-second transmission interval, with sensor-specific measurement handling as described above.
